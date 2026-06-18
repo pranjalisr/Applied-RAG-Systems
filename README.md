@@ -1,13 +1,13 @@
-# 🔍 RAG Projects
+# 🔍 Applied-RAG-Systems
 
-A curated collection of **Retrieval-Augmented Generation (RAG)** projects built in Python — ranging from a bare-bones implementation from scratch to production-style agentic and multimodal systems. Each project is self-contained and progressively more advanced.
+A curated collection of **Retrieval-Augmented Generation (RAG)** system built in Python — ranging from a bare-bones implementation from scratch to production-style agentic and multimodal systems. Each project is self-contained and progressively more advanced.
 
 ---
 
 ## 📁 Project Structure
 
 ```
-RAG-Projects/
+Applied-RAG-Systems/
 ├── 01-rag-from-scratch/       # Build RAG without any framework
 ├── 02-legal-ai-assistant/     # Domain-specific RAG for legal documents
 ├── 03-research-agent/         # Autonomous research agent with RAG
@@ -83,7 +83,7 @@ A real-time agentic RAG pipeline where the system can autonomously plan retrieva
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/pranjalisr/RAG-Projects.git
+   git clone https://github.com/pranjalisr/Applied-RAG-Systems.git
    cd RAG-Projects
    ```
 
