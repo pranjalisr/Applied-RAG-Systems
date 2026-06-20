@@ -1,22 +1,31 @@
 # RAG from Scratch 🔍
 
-A beginner-friendly implementation of Retrieval-Augmented Generation (RAG) built step-by-step using LangChain, FAISS, and HuggingFace embeddings. Every file is heavily commented to explain *why* each piece exists, not just *what* it does.
+A beginner-friendly implementation of Retrieval-Augmented Generation (RAG) built step-by-step using LangChain, FAISS, HuggingFace embeddings, and DeepSeek. Every file is structured to explain not only *what* the code does, but also *why* each step is needed in a real RAG pipeline.
 
 ---
 
 ## What is RAG and Why Does It Matter?
 
-**The problem with plain LLMs:** Large Language Models like GPT-4 are trained on data up to a certain cutoff date, and they have no knowledge of *your* private documents — your company's policy manuals, your research papers, your product documentation. If you ask GPT-4 "What is the refund policy in our internal handbook?", it simply doesn't know.
+**The problem with plain LLMs:**
+Large Language Models can generate impressive answers, but they have limitations. They may hallucinate, rely on outdated knowledge, or fail to answer questions about private documents such as research papers, internal company policies, product manuals, or project-specific notes.
 
-**What RAG does:** RAG (Retrieval-Augmented Generation) solves this by giving the LLM access to your documents *at query time*. Instead of retraining the model (expensive, slow), you store your documents in a searchable vector database. When a user asks a question, you retrieve the most relevant passages and include them in the LLM's prompt. The LLM reads those passages and answers *based on your documents*.
+**What RAG does:**
+Retrieval-Augmented Generation solves this by giving the LLM access to external documents at query time. Instead of retraining the model, the system retrieves the most relevant chunks from your documents and sends them to the LLM as context. The LLM then generates an answer grounded in those retrieved chunks.
 
-**Why it matters:** RAG is currently the dominant architecture for production AI Q&A systems. It's cost-effective (no retraining), updatable (just add documents to the database), and auditable (you can see exactly which document chunks informed each answer). Understanding RAG from scratch gives you the foundation to build everything from customer support bots to internal knowledge assistants.
+**Why it matters:**
+RAG is one of the most practical architectures for building production-ready AI Q&A systems. It is cost-effective, easy to update, and more transparent because the system can show which document chunks were used to generate the answer.
+
+This project demonstrates the core RAG workflow from scratch:
+
+```text
+Load documents → Chunk text → Generate embeddings → Store in FAISS → Retrieve relevant chunks → Generate answer with DeepSeek
+```
 
 ---
 
 ## Architecture
 
-```
+```text
 YOUR DOCUMENTS (PDF / TXT / DOCX)
          │
          ▼
@@ -26,282 +35,600 @@ YOUR DOCUMENTS (PDF / TXT / DOCX)
          │
          ▼
   ┌─────────────┐
-  │  2. CHUNK   │  Split large docs into ~500-char overlapping pieces
+  │  2. CHUNK   │  Split large documents into smaller overlapping chunks
   └──────┬──────┘
          │
          ▼
   ┌─────────────┐
-  │  3. EMBED   │  Convert each chunk → 384-dim vector (all-MiniLM-L6-v2)
+  │  3. EMBED   │  Convert each chunk into vector embeddings
   └──────┬──────┘
          │
          ▼
   ┌─────────────┐
-  │  4. INDEX   │  Store vectors in FAISS (saved to disk for reuse)
+  │  4. INDEX   │  Store vectors in FAISS for similarity search
   └──────┬──────┘
          │
          │                    USER QUESTION
          │                         │
          │                         ▼
          │                  ┌─────────────┐
-         │                  │  5. EMBED   │  Embed question → vector
+         │                  │  5. EMBED   │  Convert question into a vector
          │                  └──────┬──────┘
          │                         │
          ▼                         ▼
   ┌─────────────────────────────────────┐
-  │         FAISS SIMILARITY SEARCH     │  Find top-k most similar chunks
+  │         FAISS SIMILARITY SEARCH     │  Retrieve top-k relevant chunks
   └──────────────────┬──────────────────┘
                      │
                      ▼
-             TOP-k RELEVANT CHUNKS
+             RELEVANT DOCUMENT CHUNKS
                      │
                      ▼
   ┌─────────────────────────────────────┐
-  │     6. GENERATE (LLM + Prompt)      │  LLM reads chunks + question
+  │     6. GENERATE (DeepSeek + Prompt) │  Generate grounded answer
   └──────────────────┬──────────────────┘
                      │
                      ▼
-              GROUNDED ANSWER ✅
+              SOURCE-GROUNDED ANSWER ✅
 ```
 
 ---
 
 ## Tech Stack
 
-| Component         | Library / Tool                          | Purpose                                  |
-|-------------------|-----------------------------------------|------------------------------------------|
-| Document loading  | `langchain-community` loaders           | Read PDF, TXT, DOCX files                |
-| Text splitting    | `langchain` RecursiveCharacterTextSplitter | Split docs into overlapping chunks    |
-| Embeddings        | `sentence-transformers` (HuggingFace)   | Convert text → vectors (free, local)     |
-| Vector database   | `faiss-cpu`                             | Fast similarity search over embeddings   |
-| LLM               | OpenAI GPT-3.5/4 or local Ollama        | Generate answers from retrieved context  |
-| Orchestration     | `langchain` RetrievalQA chain           | Tie retrieval + generation together      |
-| Env management    | `python-dotenv`                         | Load API keys from `.env` file           |
+| Component        | Library / Tool                     | Purpose                                       |
+| ---------------- | ---------------------------------- | --------------------------------------------- |
+| Document loading | `langchain-community` loaders      | Read PDF, TXT, and DOCX files                 |
+| Text splitting   | `RecursiveCharacterTextSplitter`   | Split documents into overlapping chunks       |
+| Embeddings       | `sentence-transformers`            | Convert text into vector embeddings           |
+| Vector database  | `faiss-cpu`                        | Store and search document embeddings          |
+| LLM              | DeepSeek via OpenAI-compatible API | Generate final answers from retrieved context |
+| Env management   | `python-dotenv`                    | Load API keys from `.env`                     |
+| Orchestration    | LangChain                          | Connect retrieval and generation steps        |
 
 ---
 
 ## Step-by-Step Setup
 
-### 1. Create and activate a virtual environment
+### 1. Clone the repository
 
 ```bash
-python -m venv venv
-source venv/bin/activate        # macOS / Linux
-# venv\Scripts\activate         # Windows
+git clone https://github.com/pranjalisr/Applied-RAG-Systems.git
+cd Applied-RAG-Systems/01-rag-from-scratch
 ```
 
-### 2. Install dependencies
+---
+
+### 2. Create and activate a virtual environment
+
+Use **Python 3.11**.
+
+Python 3.14 may cause dependency issues with `faiss-cpu`.
 
 ```bash
-pip install -r requirements.txt
+python3.11 -m venv .venv
+source .venv/bin/activate
 ```
 
-> ⏱️ First install may take a few minutes. `faiss-cpu` and `sentence-transformers` are the largest packages.
+Verify the Python version:
 
-### 3. Configure your API key
+```bash
+python --version
+```
+
+Expected output:
+
+```text
+Python 3.11.x
+```
+
+---
+
+### 3. Install dependencies
+
+Upgrade pip:
+
+```bash
+python -m pip install --upgrade pip
+```
+
+Install all dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+> First install may take a few minutes because `faiss-cpu` and `sentence-transformers` are large packages.
+
+---
+
+## Required `requirements.txt`
+
+Make sure your `requirements.txt` includes these dependencies:
+
+```txt
+langchain==0.1.20
+langchain-community==0.0.38
+langchain-openai==0.1.6
+openai==1.30.5
+httpx==0.27.2
+faiss-cpu==1.8.0
+sentence-transformers
+python-dotenv
+pypdf
+docx2txt
+```
+
+The pinned versions of `openai`, `httpx`, and `langchain-openai` help avoid this error:
+
+```text
+Client.__init__() got an unexpected keyword argument 'proxies'
+```
+
+---
+
+## Configure DeepSeek API
+
+This project uses **DeepSeek instead of OpenAI** for answer generation.
+
+Create a `.env` file:
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and replace `your_openai_api_key_here` with your actual key from [platform.openai.com](https://platform.openai.com/api-keys).
+Open `.env` and add:
 
-```
-OPENAI_API_KEY=sk-...your-key-here...
-```
-
-> 💡 **No OpenAI account?** Use a local model with Ollama — see [Using Ollama](#using-ollama-no-api-key-needed) below.
-
-### 4. Add your documents
-
-Drop any `.pdf`, `.txt`, or `.docx` files into:
-
-```
-data/sample_docs/
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
 ```
 
-The more documents you add, the more the system can answer. Start with a few text files to test.
-
-### 5. Run it!
-
-```bash
-# Interactive mode — asks questions in a loop
-python main.py
-
-# Single question mode
-python main.py --question "What are the main topics in these documents?"
-
-# Debug mode — shows retrieved chunks and full LLM prompt
-python main.py --debug --question "What is the refund policy?"
-```
+Do not wrap the values in quotes.
 
 ---
 
-## How to Add Your Own Documents
+## DeepSeek Configuration in Code
 
-Just drop files into `data/sample_docs/`. The loader automatically detects file types:
+In `src/generator.py`, make sure the required imports are present at the top:
 
-| File type | Support | Notes |
-|-----------|---------|-------|
-| `.pdf`    | ✅      | Each page becomes a separate Document |
-| `.txt`    | ✅      | Entire file is one Document |
-| `.docx`   | ✅      | Entire file is one Document |
-| `.csv`    | ❌      | Not supported (yet) |
+```python
+import os
+from dotenv import load_dotenv
 
-**After adding new documents**, delete the cached FAISS index so it gets rebuilt:
+from langchain_openai import ChatOpenAI
+```
+
+Use DeepSeek through LangChain’s OpenAI-compatible client:
+
+```python
+load_dotenv()
+
+llm = ChatOpenAI(
+    model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+    temperature=0,
+)
+```
+
+DeepSeek is used only for **answer generation**.
+The embeddings are still generated locally using HuggingFace sentence-transformers.
+
+---
+
+## Add Your Documents
+
+Drop any `.pdf`, `.txt`, or `.docx` files into:
+
+```text
+data/sample_docs/
+```
+
+Example:
+
+```text
+data/sample_docs/RAG.pdf
+```
+
+For testing, this project was run using the paper:
+
+```text
+Retrieval-Augmented Generation for Large Language Models: A Survey
+```
+
+This PDF is a good test document because it contains explanations of RAG, Naive RAG, Advanced RAG, Modular RAG, indexing, retrieval, generation, evaluation, and future directions.
+
+---
+
+## Supported File Types
+
+| File type | Support | Notes                                       |
+| --------- | ------- | ------------------------------------------- |
+| `.pdf`    | ✅       | Each page can be loaded as document content |
+| `.txt`    | ✅       | Simple text files are supported             |
+| `.docx`   | ✅       | Word documents are supported                |
+| `.csv`    | ❌       | Not supported in this version               |
+
+---
+
+## Rebuild FAISS Index After Changing Documents
+
+If you add, remove, or replace documents, delete the existing FAISS index:
 
 ```bash
-rm -rf faiss_index/
-python main.py
+rm -rf faiss_index
+```
+
+Then run the project again. The FAISS index will be rebuilt automatically.
+
+---
+
+## Run the Project
+
+### Interactive mode
+
+```bash
+python main.py --model deepseek-chat
+```
+
+### Single question mode
+
+```bash
+python main.py --model deepseek-chat --question "According to the uploaded RAG survey paper, what problems do LLMs face, and how does Retrieval-Augmented Generation help solve them?"
+```
+
+### Debug mode
+
+```bash
+python main.py --debug --model deepseek-chat --question "According to the uploaded RAG survey paper, explain how RAG works."
+```
+
+Debug mode shows the retrieved chunks and the final prompt sent to the LLM. This is useful for checking whether the system is retrieving the correct document content.
+
+---
+
+## Recommended Questions for Testing
+
+Use questions that are directly supported by your uploaded document.
+
+### RAG importance
+
+```bash
+python main.py --model deepseek-chat --question "According to the uploaded RAG survey paper, what problems do LLMs face, and how does Retrieval-Augmented Generation help solve them?"
+```
+
+### RAG pipeline
+
+```bash
+python main.py --model deepseek-chat --question "According to Figure 2 in the uploaded RAG survey paper, explain how the RAG process works for question answering, including indexing, retrieval, and generation."
+```
+
+### RAG with external knowledge
+
+```bash
+python main.py --model deepseek-chat --question "According to the uploaded RAG survey paper, explain how Retrieval-Augmented Generation improves LLM answers by using external knowledge, document chunks, embeddings, vector search, and generation."
+```
+
+### RAG evolution
+
+```bash
+python main.py --model deepseek-chat --question "According to the uploaded RAG survey paper, explain how RAG evolved from Naive RAG to Advanced RAG and Modular RAG."
 ```
 
 ---
 
 ## How to Verify the LLM Uses Your Documents
 
-This is the most important test for any RAG system — make sure it's actually reading *your* documents and not falling back on general knowledge.
+This is the most important test for a RAG system.
 
-**Step 1:** Put a document with a very specific, obscure fact in `data/sample_docs/`. For example, create `test.txt` containing:
+### Step 1: Add a test document
 
+Create a file:
+
+```text
+data/sample_docs/test.txt
 ```
+
+Add this content:
+
+```text
 The Zorbax Protocol was established in 2019 by Dr. Eleanor Voss.
 The protocol requires three phases: initialization, calibration, and review.
 ```
 
-**Step 2:** Ask the system about it:
+### Step 2: Rebuild the FAISS index
+
 ```bash
-python main.py --question "Who established the Zorbax Protocol?"
+rm -rf faiss_index
 ```
 
-**Expected good result:**
-```
-Answer: Dr. Eleanor Voss established the Zorbax Protocol in 2019.
-Sources: data/sample_docs/test.txt
-```
+### Step 3: Ask a question from the document
 
-**Step 3:** Ask about something NOT in any document:
 ```bash
-python main.py --question "What is the capital of Australia?"
+python main.py --model deepseek-chat --question "Who established the Zorbax Protocol?"
 ```
 
-**Expected good result:**
-```
-Answer: I don't know based on the provided documents.
+Expected answer:
+
+```text
+Dr. Eleanor Voss established the Zorbax Protocol in 2019.
 ```
 
-If the second answer returns "Canberra" (from general knowledge), the system is hallucinating — check that your prompt template in `src/generator.py` is being applied correctly.
+### Step 4: Ask something not present in the documents
+
+```bash
+python main.py --model deepseek-chat --question "What is the capital of Australia?"
+```
+
+Expected answer:
+
+```text
+I don't know based on the provided documents.
+```
+
+If the model answers using general knowledge, check the prompt template in `src/generator.py`.
 
 ---
 
-## Using Ollama (No API Key Needed)
+## Retriever Configuration
 
-[Ollama](https://ollama.com) lets you run LLMs locally for free.
+The retriever controls how many chunks are fetched from FAISS.
 
-```bash
-# 1. Install Ollama: https://ollama.com
-# 2. Pull a model
-ollama pull llama3      # ~4GB download
-ollama pull mistral     # ~4GB download, often faster
+Example top-k retrieval:
 
-# 3. Run with Ollama
-python main.py --model ollama/llama3
-python main.py --model ollama/mistral --question "Summarize the documents"
+```python
+retriever = vectorstore.as_retriever(
+    search_type="similarity",
+    search_kwargs={"k": 8}
+)
 ```
+
+Here, `k=8` means the retriever sends the top 8 relevant chunks to the LLM.
+
+If the retrieved chunks are repetitive or mostly from the same page, you can use MMR retrieval for more diverse results:
+
+```python
+retriever = vectorstore.as_retriever(
+    search_type="mmr",
+    search_kwargs={
+        "k": 8,
+        "fetch_k": 25,
+        "lambda_mult": 0.5
+    }
+)
+```
+
+---
+
+## Prompt Template
+
+A strict prompt is used to reduce hallucinations:
+
+```python
+RAG_PROMPT_TEMPLATE = """
+You are a helpful assistant. Answer the question based ONLY on the following context.
+If the answer is not in the context, say "I don't know based on the provided documents."
+Do not use your general knowledge.
+Do not add a "What is not covered" section unless the user specifically asks for limitations.
+Give a clean, structured answer with headings and bullet points.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:
+"""
+```
+
+This keeps the answer grounded in the retrieved document chunks.
 
 ---
 
 ## Beginner Tips
 
-### What happens if chunk_size is too large or too small?
+### What happens if chunk size is too large or too small?
 
-| Setting | Effect |
-|---------|--------|
-| **chunk_size too large** (e.g., 2000) | Fewer chunks, less precise retrieval. The LLM receives a lot of text, most of which may be irrelevant to the question. |
-| **chunk_size too small** (e.g., 50)  | Thousands of tiny chunks. Each chunk lacks context — a sentence like "See the above section" becomes meaningless on its own. |
-| **Sweet spot** (300–800 chars)        | Roughly 1–2 paragraphs. Enough context to be meaningful, small enough to be precise. |
+| Setting                | Effect                                                           |
+| ---------------------- | ---------------------------------------------------------------- |
+| `chunk_size` too large | Fewer chunks, but retrieval may include too much irrelevant text |
+| `chunk_size` too small | Many tiny chunks, but each chunk may lack useful context         |
+| Balanced chunk size    | Retrieves meaningful passages without overwhelming the LLM       |
 
-### Why cosine similarity beats keyword search
+---
 
-Traditional search (e.g., `grep`, SQL `LIKE`) requires exact word matches. Search for "car" and you won't find documents that say "automobile" or "vehicle".
+### What does top-k mean?
 
-Semantic search (cosine similarity over embeddings) understands *meaning*:
-- "car", "automobile", "vehicle", "sedan" → all have very similar embeddings
-- You can ask "What's the fastest way to travel?" and find chunks about "high-speed rail" or "airplane travel" — no exact keyword overlap needed
+`k` is the number of chunks retrieved for each question.
 
-### What does k mean in top-k retrieval?
+| Value   | Effect                                          |
+| ------- | ----------------------------------------------- |
+| `k=1`   | Very narrow context                             |
+| `k=3`   | Small but focused context                       |
+| `k=8`   | Better coverage for longer documents            |
+| `k=10+` | More context, but may include irrelevant chunks |
 
-`k` is the number of document chunks retrieved per question.
+If the answer says:
 
-- **k=1**: Only the single best match. Very precise but may miss relevant context.
-- **k=3** (default): A good balance. Captures the primary answer + nearby supporting text.
-- **k=10**: Comprehensive but may include loosely related chunks that dilute the LLM's focus.
+```text
+I don't know based on the provided documents.
+```
 
-Use `--k 5` on the command line to experiment. If the LLM keeps saying "I don't know" on questions you know are in the docs, try increasing k.
+but you know the answer exists in the PDF, try:
+
+1. Asking a more specific question.
+2. Increasing `k`.
+3. Using MMR retrieval.
+4. Running with `--debug`.
 
 ---
 
 ## Troubleshooting
 
-### `OPENAI_API_KEY is not set`
+### `ModuleNotFoundError: No module named 'dotenv'`
+
+Install `python-dotenv`:
+
 ```bash
-cp .env.example .env
-# edit .env and add your key
+python -m pip install python-dotenv
 ```
 
-### `No documents were loaded`
-Make sure you have files in `data/sample_docs/`. Only `.pdf`, `.txt`, and `.docx` are supported.
+Also add this to `requirements.txt`:
 
-### `FileNotFoundError: data/sample_docs does not exist`
-```bash
-mkdir -p data/sample_docs
-# then add your files
+```txt
+python-dotenv
 ```
 
-### `Error: Connection refused` (Ollama)
-Make sure Ollama is running:
+---
+
+### `No matching distribution found for faiss-cpu==1.8.0`
+
+This usually happens when using Python 3.14.
+
+Fix:
+
 ```bash
-ollama serve
+deactivate
+rm -rf .venv
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-### `Model not found` (Ollama)
-Pull the model first:
+---
+
+### `Client.__init__() got an unexpected keyword argument 'proxies'`
+
+This is caused by incompatible package versions.
+
+Fix:
+
 ```bash
-ollama pull llama3
+python -m pip uninstall -y openai httpx langchain-openai
+python -m pip install openai==1.30.5 httpx==0.27.2 langchain-openai==0.1.6
 ```
 
-### Answers seem wrong or generic
-1. Run with `--debug` to see which chunks are being retrieved
-2. Check the sources printed after each answer — are they the right files?
-3. Try deleting `faiss_index/` and rebuilding — you may have stale embeddings
-4. Try increasing `--k` to retrieve more context
+---
 
-### `pip install` fails on `faiss-cpu`
-On some systems you may need to install build tools:
+### DeepSeek API key not found
+
+Check that `.env` contains:
+
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+Also make sure `load_dotenv()` is called before reading environment variables.
+
+---
+
+### Answer is too short or says “not covered”
+
+This usually means the retrieved chunks did not contain enough relevant information.
+
+Try:
+
 ```bash
-# Ubuntu/Debian
-sudo apt-get install build-essential
+python main.py --debug --model deepseek-chat --question "Your question here"
+```
 
-# macOS
-xcode-select --install
+Then check:
+
+1. Which pages were retrieved.
+2. Whether the retrieved chunks actually contain the answer.
+3. Whether the question is too broad.
+4. Whether `k` should be increased.
+5. Whether MMR retrieval should be used.
+
+---
+
+### Stale or wrong answers after changing documents
+
+Delete the FAISS index and rebuild:
+
+```bash
+rm -rf faiss_index
+python main.py --model deepseek-chat
+```
+
+---
+
+## Example Output
+
+Example command:
+
+```bash
+python main.py --model deepseek-chat --question "According to the uploaded RAG survey paper, explain how Retrieval-Augmented Generation improves LLM answers by using external knowledge, document chunks, embeddings, vector search, and generation."
+```
+
+Example output:
+
+```text
+PIPELINE READY — Let's ask some questions!
+
+Question:
+According to the uploaded RAG survey paper, explain how Retrieval-Augmented Generation improves LLM answers...
+
+Answer:
+Retrieval-Augmented Generation improves LLM answers by incorporating knowledge from external databases. Documents are split into chunks, encoded into vector embeddings, stored in a vector database, and retrieved based on semantic similarity. The retrieved chunks are combined with the user question and passed to the LLM to generate a grounded answer.
+
+Sources used:
+- data/sample_docs/RAG.pdf, page 2
+- data/sample_docs/RAG.pdf, page 3
+- data/sample_docs/RAG.pdf, page 4
 ```
 
 ---
 
 ## Project Structure
 
-```
+```text
 01-rag-from-scratch/
-├── README.md                 ← You are here
+├── README.md                 ← Project documentation
 ├── requirements.txt          ← Python dependencies
-├── .env.example              ← Template for your API keys
-├── main.py                   ← Entry point — ties all 6 steps together
+├── .env.example              ← Template for API keys
+├── .env                      ← Local environment variables
+├── main.py                   ← Entry point for the pipeline
+├── faiss_index/              ← Cached FAISS vector index
 ├── data/
-│   └── sample_docs/          ← Drop your .pdf/.txt/.docx files here
+│   └── sample_docs/          ← Add your PDF, TXT, or DOCX files here
 └── src/
-    ├── __init__.py           ← Makes src/ a Python package
-    ├── document_loader.py    ← Step 1: Load documents from disk
+    ├── __init__.py           ← Makes src a Python package
+    ├── document_loader.py    ← Step 1: Load documents
     ├── chunker.py            ← Step 2: Split documents into chunks
-    ├── embedder.py           ← Step 3: Convert text to vectors
-    ├── vector_store.py       ← Step 4: Store/search vectors with FAISS
+    ├── embedder.py           ← Step 3: Generate embeddings
+    ├── vector_store.py       ← Step 4: Store vectors in FAISS
     ├── retriever.py          ← Step 5: Retrieve relevant chunks
-    └── generator.py          ← Step 6: Generate answers with LLM
+    └── generator.py          ← Step 6: Generate answer with DeepSeek
 ```
+
+---
+
+## Final Notes
+
+This project shows the complete foundation of a RAG-based document question-answering system.
+
+The main idea is simple:
+
+```text
+Do not rely only on the LLM's internal memory.
+Retrieve relevant external knowledge first.
+Then generate an answer grounded in that retrieved context.
+```
+
+This version uses:
+
+```text
+HuggingFace embeddings for local vector creation
+FAISS for vector search
+DeepSeek for answer generation
+LangChain for orchestration
+```
+
+It is a practical starting point for building document Q&A systems, research assistants, internal knowledge bots, and production GenAI applications.
+
+* Note: This version uses DeepSeek through an OpenAI-compatible API endpoint instead of OpenAI. The embedding model remains HuggingFace-based, while DeepSeek is used only for answer generation. 
