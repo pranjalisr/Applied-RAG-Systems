@@ -82,10 +82,10 @@ Examples:
 
     parser.add_argument(
         "--model",
-        default="gpt-3.5-turbo",
+        default="deepseek-chat",
         help="LLM to use for answer generation. "
-             "Options: gpt-3.5-turbo, gpt-4, ollama/llama3, ollama/mistral. "
-             "Default: gpt-3.5-turbo",
+             "Options: deepseek-chat, gpt-4, ollama/llama3, ollama/mistral. "
+             "Default: deepseek-chat",
     )
 
     parser.add_argument(
@@ -132,7 +132,7 @@ def run_pipeline(args):
     load_dotenv()
 
     # Warn early if using OpenAI but the API key is missing
-    if not args.model.startswith("ollama/") and not os.getenv("OPENAI_API_KEY"):
+    if not args.model.startswith("ollama/") and not os.getenv("DEEPSEEK_API_KEY"):
         print(
             "\n⚠️  WARNING: OPENAI_API_KEY is not set in your environment.\n"
             "   Either:\n"

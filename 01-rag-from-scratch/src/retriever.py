@@ -22,10 +22,8 @@
 #   "Give me the top 3 most relevant paragraphs from my documents."
 #
 #   k=1: Very focused. Only the single best match. May miss related info.
-#   k=3: A good balance. Captures the main answer + nearby context. (default)
-#   k=10: Comprehensive but may include loosely related chunks that confuse the LLM.
-#
-# Rule of thumb: Start with k=3 and increase if the LLM says "I don't know"
+#   k=8: A good balance. Captures the main answer + nearby context. (default)
+# Rule of thumb: Start with k=8 and increase if the LLM says "I don't know"
 # on questions you KNOW are in your documents.
 #
 # WHY COSINE SIMILARITY BEATS KEYWORD SEARCH:
@@ -41,7 +39,7 @@
 # where users phrase questions differently than how documents are written.
 
 
-def get_retriever(vector_store, k: int = 3):
+def get_retriever(vector_store, k: int = 8):
     """
     Create a LangChain retriever from a FAISS vector store.
 
@@ -51,26 +49,29 @@ def get_retriever(vector_store, k: int = 3):
 
     Args:
         vector_store:   A FAISS vector store (from vector_store.py).
-        k (int):        How many chunks to retrieve per query. Default: 3.
+        k (int):        How many chunks to retrieve per query. Default: 8.
                         Increase if answers are missing info; decrease if too noisy.
 
     Returns:
         A LangChain VectorStoreRetriever object.
 
     Example:
-        retriever = get_retriever(vector_store, k=3)
+        retriever = get_retriever(vector_store, k=8)
         docs = retriever.invoke("What is the refund policy?")
     """
 
     # as_retriever() wraps the FAISS store in a Retriever interface.
-    # search_type="similarity" uses cosine similarity (since we normalized embeddings).
     # Other options: "mmr" (Maximal Marginal Relevance — reduces redundancy among results)
     retriever = vector_store.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": k},  # retrieve top-k most similar chunks
+        search_type="mmr",
+        search_kwargs={
+            "k": 8,
+            "fetch_k": 25,
+            "lambda_mult": 0.5
+            },  # retrieve top-8 most similar chunks
     )
 
-    print(f"\n🔎 Retriever configured (top-k={k}, search_type=similarity)")
+    print(f"\n🔎 Retriever configured (top-k={k}, search_type=mmr)")
     return retriever
 
 

@@ -36,16 +36,21 @@
 # The resulting filled-in prompt is what actually gets sent to the LLM API.
 # With debug=True, you can print this full prompt to see exactly what the LLM receives.
 
+import os
+from dotenv import load_dotenv
+
 from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+
 
 
 # The prompt template instructs the LLM to stay grounded in the provided context.
 # {context} will be replaced by the retrieved chunks (as a single text block).
 # {question} will be replaced by the user's question.
 RAG_PROMPT_TEMPLATE = """You are a helpful assistant. Answer the question based ONLY on the following context.
-If the answer is not in the context, say "I don't know based on the provided documents."
+Give a detailed, structured answer using headings and bullet points.
+If the context is limited, answer only what is supported and mention what is not covered."
 Do not use your general knowledge.
 
 Context:
@@ -102,7 +107,6 @@ def build_qa_chain(
         #   ollama pull mistral
         #
         # The model_name format is "ollama/<model>" e.g. "ollama/llama3"
-        import os
         from langchain_community.llms import Ollama
 
         # Extract the model tag after the "ollama/" prefix
@@ -113,17 +117,20 @@ def build_qa_chain(
         llm = Ollama(model=ollama_model, base_url=base_url)
 
     else:
-        # OpenAI models (gpt-3.5-turbo, gpt-4, gpt-4o, etc.)
-        # Requires OPENAI_API_KEY to be set in your .env file.
+        
         #
         # temperature=0 means "deterministic" — the LLM always picks the highest
         # probability token. For Q&A this is ideal; you want consistent, factual
         # answers rather than creative variation.
+        load_dotenv()
+
         llm = ChatOpenAI(
-            model_name=model_name,
-            temperature=0,  # 0 = deterministic/factual, 1 = more creative/varied
+            model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            temperature=0
         )
-        print(f"   Using OpenAI model '{model_name}' (ensure OPENAI_API_KEY is set)")
+        print(f"   Using DeepSeek model '{model_name}' (ensure DEEPSEEK_API_KEY is set)")
 
     # -------------------------------------------------------------------------
     # BUILD THE PROMPT TEMPLATE
