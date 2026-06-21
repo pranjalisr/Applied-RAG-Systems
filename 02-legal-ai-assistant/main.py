@@ -60,8 +60,8 @@ Examples:
     parser.add_argument(
         "--model",
         type=str,
-        default=os.getenv("OPENAI_MODEL", "gpt-4"),
-        help="OpenAI model to use (default: gpt-4).",
+        default=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+        help="DeepSeek model to use (default: deepseek-v4-flash).", 
     )
     parser.add_argument(
         "--skip-risks",
@@ -233,13 +233,15 @@ def main() -> None:
     args = parser.parse_args()
 
     # Validate API key
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or api_key == "your_openai_api_key_here":
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
+    if not api_key or api_key == "your_deepseek_api_key_here":
         console.print(
-            "[bold red]ERROR:[/bold red] OPENAI_API_KEY not set. "
-            "Copy .env.example to .env and add your key."
-        )
-        sys.exit(1)
+            "[bold red]ERROR:[/bold red] DEEPSEEK_API_KEY not set. "
+            "Add your DeepSeek API key to .env."
+    )
+    sys.exit(1)
 
     # Validate file argument
     if not args.file:
@@ -278,9 +280,10 @@ def main() -> None:
 
     # Initialise LLM
     llm = ChatOpenAI(
-        model=args.model,
-        temperature=0,          # deterministic output for legal analysis
-        openai_api_key=api_key,
+    model=args.model,
+    temperature=0,
+    openai_api_key=api_key,
+    openai_api_base=base_url,
     )
 
     # ── Step 1: Parse document ───────────────────────────────────────────────
