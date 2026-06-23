@@ -128,19 +128,29 @@ def main() -> None:
         sys.exit(1)
 
     # ── Resolve model names ───────────────────────────────────────────────────
-    text_model = args.model or os.getenv("OPENAI_MODEL", "gpt-4")
+    text_model = args.model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
     vision_model = args.vision_model or os.getenv("VISION_MODEL", "gpt-4-vision-preview")
+    deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     images_dir = os.getenv("IMAGES_OUTPUT_DIR", "data/extracted/images")
     tables_dir = os.getenv("TABLES_OUTPUT_DIR", "data/extracted/tables")
 
     # ── Initialise clients ────────────────────────────────────────────────────
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        print("[main] ERROR: OPENAI_API_KEY is not set. Copy .env.example to .env and fill it in.")
+    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not deepseek_api_key:
+        print("[main] ERROR: DEEPSEEK_API_KEY is not set. Add it to your .env file.")
         sys.exit(1)
 
-    llm = ChatOpenAI(model=text_model, openai_api_key=openai_api_key)
-    openai_client = OpenAI(api_key=openai_api_key)
+    llm = ChatOpenAI(
+        model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        temperature=0,
+    )
+
+    openai_client = OpenAI(
+        api_key=deepseek_api_key,
+        base_url=deepseek_base_url,
+    )
 
     # ── Step 1: Parse document ────────────────────────────────────────────────
     print(f"\n[main] Parsing document: {args.file}")
