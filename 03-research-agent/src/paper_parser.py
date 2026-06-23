@@ -39,10 +39,11 @@ We mitigate this by:
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Union
 
 from langchain_community.document_loaders import PyPDFLoader
 from pydantic import BaseModel, Field
+
 
 
 class PaperMetadata(BaseModel):
@@ -54,7 +55,10 @@ class PaperMetadata(BaseModel):
     """
 
     title: str = Field(description="Full title of the paper")
-    authors: list[str] = Field(default_factory=list, description="List of author names")
+    authors: list[str] | str = Field(
+    default_factory=list,
+    description="List of author names",
+    )
     year: Optional[str] = Field(default=None, description="Publication year if found")
     abstract: Optional[str] = Field(default=None, description="Full abstract text")
     methodology: Optional[str] = Field(
@@ -65,8 +69,8 @@ class PaperMetadata(BaseModel):
         default_factory=list,
         description="3-5 main findings from the paper",
     )
-    limitations: list[str] = Field(
-        default_factory=list,
+    limitations: list[str] | str = Field(
+        default_factory=None,
         description="Limitations acknowledged by the authors",
     )
     file_path: str = Field(description="Absolute or relative path to the source PDF")

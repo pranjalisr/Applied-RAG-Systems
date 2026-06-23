@@ -104,13 +104,13 @@ def create_research_agent(
     # ZERO_SHOT_REACT_DESCRIPTION: no few-shot examples, tool selection driven
     # entirely by the description strings we provided above.
     agent = initialize_agent(
-        tools=tools,
-        llm=llm,
-        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=True,           # print Thought/Action/Observation to stdout
-        handle_parsing_errors=True,  # recover gracefully from malformed tool calls
-        agent_kwargs={"prefix": _AGENT_PREFIX},
-        max_iterations=8,       # safety cap to prevent infinite loops
+    tools=tools,
+    llm=llm,
+    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    verbose=False,
+    handle_parsing_errors=True,
+    max_iterations=5,
+    early_stopping_method="generate",
     )
 
     return agent

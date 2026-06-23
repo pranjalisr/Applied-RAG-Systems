@@ -55,10 +55,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Research topic label used in the report title  (default: 'Research Analysis')",
     )
     parser.add_argument(
-        "--model",
-        default=os.getenv("OPENAI_MODEL", "gpt-4"),
-        metavar="MODEL",
-        help="OpenAI model name  (default: gpt-4)",
+    "--model",
+    default=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+    metavar="MODEL",
+    help="DeepSeek model name (default: deepseek-v4-flash)",
     )
     parser.add_argument(
         "--query",
@@ -86,11 +86,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _check_api_key() -> None:
-    """Exit early with a clear error if the OpenAI key is missing."""
-    if not os.getenv("OPENAI_API_KEY"):
+    """Exit early with a clear error if the DeepSeek key is missing."""
+    if not os.getenv("DEEPSEEK_API_KEY"):
         print(
-            "[main] ERROR: OPENAI_API_KEY environment variable is not set.\n"
-            "       Copy .env.example to .env and add your key.",
+            "[main] ERROR: DEEPSEEK_API_KEY environment variable is not set.\n"
+            "Create a .env file and add your DeepSeek API key.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -137,9 +137,10 @@ def main() -> None:
     # ------------------------------------------------------------------
     print(f"[main] Using model: {args.model}")
     llm = ChatOpenAI(
-        model=args.model,
-        temperature=0,        # deterministic output for research tasks
-        openai_api_key=os.environ["OPENAI_API_KEY"],
+    model=args.model,
+    temperature=0,
+    openai_api_key=os.environ["DEEPSEEK_API_KEY"],
+    openai_api_base=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
 
     # ------------------------------------------------------------------
