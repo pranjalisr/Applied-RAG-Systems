@@ -2,234 +2,671 @@
 
 A Retrieval-Augmented Generation system that understands **text, images, and tables** inside PDF documents.
 
-> A text-only RAG can't answer *"What does the architecture diagram show?"* — but this system can.
-> It extracts every content type from the document, builds a dedicated search index per modality,
-> routes each query to the right index, and generates an answer that explicitly cites whether the
-> information came from a paragraph, a chart, or a data table.
+> A text-only RAG can answer *"What does the paper say about Transformers?"*
+> But a multimodal RAG pipeline can go further — it can extract text, detect tables, save images, build separate indexes, and route the query to the right type of content.
+
+In this version, the project uses **DeepSeek instead of OpenAI** for text and table reasoning.
+
+> Note: DeepSeek is used through its OpenAI-compatible API for text generation and table descriptions.
+> Image extraction works, but image captioning is skipped using `--skip-images` because DeepSeek is not a direct GPT-4V vision replacement.
 
 ---
 
 ## What "Multimodal" Means
 
-| Query | Text-only RAG | This System |
-|---|---|---|
-| "Explain the authentication flow" | ✅ Can answer | ✅ Can answer |
-| "What does the flowchart in section 3 show?" | ❌ Cannot answer | ✅ Captions image, answers from description |
-| "What was Q4 revenue?" | ⚠️ Only if table was also in prose | ✅ Extracts table, generates description |
-| "Summarise all key findings" | ✅ Partial | ✅ Draws from text + images + tables |
+| Query                                         | Text-only RAG                     | This System                                                       |
+| --------------------------------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| "Explain the Transformer architecture"        | ✅ Can answer                      | ✅ Can answer                                                      |
+| "What BLEU scores are reported in the table?" | ⚠️ Only if table text is captured | ✅ Extracts tables and describes them                              |
+| "Summarise the main idea of the paper"        | ✅ Can answer                      | ✅ Uses retrieved document chunks                                  |
+| "What does the architecture diagram show?"    | ❌ Cannot answer                   | ⚠️ Image is extracted, but captioning is skipped in DeepSeek mode |
+| "What are the main experimental results?"     | ⚠️ Partial                        | ✅ Uses text + table descriptions                                  |
 
 ---
 
 ## Architecture
 
-```
+```text
 PDF Document
      │
      ▼
 ┌────────────────────┐
-│  multimodal_parser │  ── pdfplumber extracts text / tables / images
+│  multimodal_parser │  ── extracts text / tables / images from PDF
 └────────┬───────────┘
          │
     ┌────┴─────────────────────────────────┐
     ▼                ▼                     ▼
 ┌─────────┐   ┌────────────┐    ┌─────────────────┐
 │  Text   │   │   Images   │    │     Tables      │
-│ Blocks  │   │  (PNG files)│    │ (list of lists) │
+│ Blocks  │   │  PNG files │    │ structured rows │
 └────┬────┘   └─────┬──────┘    └────────┬────────┘
      │              │                    │
-     │         GPT-4V caption       LLM description
+     │              │               DeepSeek table
+     │              │                description
      │              │                    │
      ▼              ▼                    ▼
-┌──────────┐ ┌────────────┐   ┌──────────────────┐
-│  FAISS   │ │   FAISS    │   │     FAISS        │
-│ Text Idx │ │ Image Idx  │   │   Table Idx      │
-└────┬─────┘ └─────┬──────┘   └────────┬─────────┘
-     └─────────────┴─────────────────── ┘
-                         │
-                  ┌──────┴──────┐
-                  │ Query Router│  ── classifies query → TEXT / IMAGE / TABLE / ALL
-                  └──────┬──────┘
-                         │
-                  ┌──────┴──────┐
-                  │Multi-Retriev│  ── fetches top-k from relevant indexes, merges
-                  └──────┬──────┘
-                         │
-                  ┌──────┴──────┐
-                  │  Generator  │  ── GPT-4 builds final answer from mixed context
-                  └─────────────┘
+┌──────────┐   Image captioning   ┌──────────────────┐
+│  FAISS   │   skipped with       │      FAISS       │
+│ Text Idx │   --skip-images      │    Table Idx     │
+└────┬─────┘                      └────────┬─────────┘
+     └──────────────────┬──────────────────┘
+                        │
+                 ┌──────┴──────┐
+                 │ Query Router │  ── classifies query → TEXT / TABLE / IMAGE / ALL
+                 └──────┬──────┘
+                        │
+                 ┌──────┴──────┐
+                 │ Multi-Retriev│  ── fetches top-k from relevant indexes, merges results
+                 └──────┬──────┘
+                        │
+                 ┌──────┴──────┐
+                 │  Generator  │  ── DeepSeek builds final grounded answer
+                 └─────────────┘
 ```
 
 ---
 
 ## Model Comparison
 
-| Modality | Model | Why |
-|---|---|---|
-| Text | all-MiniLM-L6-v2 | Fast, free, runs locally, strong retrieval quality |
-| Images | GPT-4V (`gpt-4-vision-preview`) | Understands visual content — charts, diagrams, photos |
-| Tables | GPT-3.5 / GPT-4 | Strong at structured data reasoning; converts rows to prose |
-| Generation | GPT-4 | Best reasoning across mixed text / image / table context |
+| Modality        | Model / Tool             | Why                                                                |
+| --------------- | ------------------------ | ------------------------------------------------------------------ |
+| Text embeddings | `all-MiniLM-L6-v2`       | Fast, free, local embedding model with good retrieval quality      |
+| Text generation | DeepSeek                 | Used instead of OpenAI for final answer generation                 |
+| Tables          | DeepSeek                 | Converts extracted table rows into searchable prose descriptions   |
+| Images          | Skipped in DeepSeek mode | Images are extracted, but not captioned when using `--skip-images` |
+| Vector store    | FAISS                    | Lightweight local vector database                                  |
 
-**Alternative (cost-free images):** [LLaVA](https://ollama.com/library/llava) via Ollama runs locally and produces comparable captions without API charges.
+**Alternative for full image support:** Use [LLaVA via Ollama](https://ollama.com/library/llava) later for local image captioning, then remove `--skip-images`.
 
 ---
 
 ## Setup
 
 ### 1. Clone and enter the project
+
 ```bash
-cd 04-multimodal-rag
+git clone https://github.com/pranjalisr/Applied-RAG-Systems.git
+cd Applied-RAG-Systems/04-multimodal-rag
 ```
+
+---
 
 ### 2. Create and activate a virtual environment
+
+Use Python 3.11.
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3.11 -m venv venv
+source venv/bin/activate
 ```
+
+For Windows:
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+Check Python version:
+
+```bash
+python --version
+```
+
+Expected:
+
+```text
+Python 3.11.x
+```
+
+---
 
 ### 3. Install dependencies
+
+First upgrade pip:
+
 ```bash
-pip install -r requirements.txt
+python -m pip install --upgrade pip
 ```
+
+Then install dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+If you face package version issues, install these compatible versions:
+
+```bash
+python -m pip uninstall -y openai httpx langchain-openai langchain langchain-community
+python -m pip install "openai==1.55.3" "httpx==0.27.2" "langchain==0.1.20" "langchain-community==0.0.38" "langchain-openai==0.1.7"
+```
+
+Install the remaining packages:
+
+```bash
+python -m pip install faiss-cpu sentence-transformers python-dotenv pdfplumber pillow pandas "unstructured[pdf]"
+```
+
+Verify the important versions:
+
+```bash
+python -c "import openai, httpx, langchain_openai; print(openai.__version__, httpx.__version__)"
+```
+
+Expected:
+
+```text
+1.55.3 0.27.2
+```
+
+---
 
 ### 4. Configure environment variables
+
+Create a `.env` file:
+
 ```bash
 cp .env.example .env
-# Edit .env and set OPENAI_API_KEY
 ```
 
-### 5. Add a PDF document
-```bash
-cp /path/to/your/document.pdf data/sample_docs/
+Update `.env`:
+
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+
+IMAGES_OUTPUT_DIR=data/extracted/images
+TABLES_OUTPUT_DIR=data/extracted/tables
 ```
+
+---
+
+### 5. Update `main.py` for DeepSeek
+
+In `main.py`, keep the imports:
+
+```python
+from langchain_openai import ChatOpenAI
+from openai import OpenAI
+import os
+```
+
+Initialize the LLM like this:
+
+```python
+llm = ChatOpenAI(
+    model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+    temperature=0,
+)
+```
+
+If the project also creates an OpenAI client, update it like this:
+
+```python
+openai_client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+)
+```
+
+This allows the project to use DeepSeek through the same OpenAI-compatible interface.
+
+---
+
+## PDF Used for Testing
+
+For testing this project, use:
+
+```text
+Attention Is All You Need
+```
+
+Source:
+
+```text
+https://arxiv.org/pdf/1706.03762
+```
+
+Download it into the project:
+
+```bash
+mkdir -p data/sample_docs
+curl -L "https://arxiv.org/pdf/1706.03762" -o data/sample_docs/attention_is_all_you_need.pdf
+```
+
+This PDF is a good test document because it contains:
+
+* normal research text
+* architecture explanation
+* images/figures
+* tables
+* experimental results
 
 ---
 
 ## Usage
 
 ### Ask a single question
+
 ```bash
-python main.py --file data/sample_docs/annual_report.pdf \
-               --query "What was Q4 revenue?"
+python main.py \
+  --file data/sample_docs/attention_is_all_you_need.pdf \
+  --query "What is the Transformer architecture?" \
+  --skip-images
 ```
 
-### Skip image captioning during development (saves GPT-4V cost)
+---
+
+### Ask a table-related question
+
 ```bash
-python main.py --file data/sample_docs/annual_report.pdf \
-               --query "Summarise the key findings" \
-               --skip-images
+python main.py \
+  --file data/sample_docs/attention_is_all_you_need.pdf \
+  --query "What BLEU scores are reported in the paper?" \
+  --skip-images
 ```
 
-### Skip both images and tables (fastest, text-only mode)
+---
+
+### Skip image captioning during development
+
 ```bash
-python main.py --file data/sample_docs/report.pdf \
-               --query "What is the company's strategy?" \
-               --skip-images --skip-tables
+python main.py \
+  --file data/sample_docs/attention_is_all_you_need.pdf \
+  --query "Summarise the key findings" \
+  --skip-images
 ```
+
+This is the recommended mode when using DeepSeek.
+
+---
+
+### Skip both images and tables
+
+```bash
+python main.py \
+  --file data/sample_docs/attention_is_all_you_need.pdf \
+  --query "What is the main idea of the paper?" \
+  --skip-images \
+  --skip-tables
+```
+
+This runs the project in the fastest text-only mode.
+
+---
 
 ### Interactive Q&A loop
+
 ```bash
-python main.py --file data/sample_docs/annual_report.pdf --interactive
+python main.py \
+  --file data/sample_docs/attention_is_all_you_need.pdf \
+  --interactive \
+  --skip-images
 ```
 
-### Use a different model
-```bash
-python main.py --file data/sample_docs/report.pdf \
-               --query "Describe the architecture diagram" \
-               --model gpt-4o \
-               --vision-model gpt-4o
+Example questions:
+
+```text
+What is self-attention?
 ```
 
-### Full CLI reference
+```text
+What does the paper say about multi-head attention?
 ```
---file           Path to PDF document (required)
+
+```text
+What are the main experimental results?
+```
+
+To exit:
+
+```text
+quit
+```
+
+---
+
+## Full CLI Reference
+
+```text
+--file           Path to PDF document
 --query          Question to answer
---model          Text generation model (default: gpt-4)
---vision-model   Vision model for image captioning (default: gpt-4-vision-preview)
---skip-images    Skip GPT-4V image captioning
---skip-tables    Skip LLM table description generation
---interactive    Interactive Q&A loop after indexing
+--model          Text generation model
+--vision-model   Vision model for image captioning
+--skip-images    Skip image captioning and image indexing
+--skip-tables    Skip table description generation and table indexing
+--interactive    Start interactive Q&A loop after indexing
+```
+
+For DeepSeek mode, the most reliable command is:
+
+```bash
+python main.py \
+  --file data/sample_docs/attention_is_all_you_need.pdf \
+  --query "What is the Transformer architecture?" \
+  --skip-images
+```
+
+---
+
+## Why `--skip-images` Is Used
+
+The original multimodal pipeline supports image captioning using a vision model such as GPT-4V.
+
+However, this version uses DeepSeek, and DeepSeek is being used here for text-based reasoning through an OpenAI-compatible API. Since it is not being used as a GPT-4V replacement, image captioning is skipped.
+
+So the current working mode is:
+
+```text
+Text extraction       ✅
+Table extraction      ✅
+Image extraction      ✅
+Text indexing         ✅
+Table indexing        ✅
+DeepSeek generation   ✅
+Image captioning      ❌ skipped with --skip-images
+```
+
+This still demonstrates the core multimodal RAG pipeline because the system parses different document content types and performs routed retrieval over text and tables.
+
+---
+
+## Successful Local Run
+
+The project was successfully tested with:
+
+```bash
+python main.py \
+  --file data/sample_docs/attention_is_all_you_need.pdf \
+  --query "What is the Transformer architecture?" \
+  --skip-images
+```
+
+The pipeline completed:
+
+```text
+[main] Parsing document: data/sample_docs/attention_is_all_you_need.pdf
+[parser] 'attention_is_all_you_need': 15 text blocks, 3 images, 10 tables extracted.
+[main] Found 15 text blocks, 3 images, 10 tables.
+
+[main] Indexing 15 text blocks ...
+[text_indexer] Indexed 15 text chunks -> 'text_faiss_index'
+
+[main] --skip-images set: skipping image captioning and indexing.
+
+[main] Processing 10 table(s) ...
+[table_processor] Describing table 1/10 ...
+[table_processor] Describing table 2/10 ...
+[table_processor] Describing table 3/10 ...
+[table_processor] Describing table 4/10 ...
+[table_processor] Describing table 5/10 ...
+[table_processor] Describing table 6/10 ...
+[table_processor] Describing table 7/10 ...
+[table_processor] Describing table 8/10 ...
+[table_processor] Describing table 9/10 ...
+[table_processor] Describing table 10/10 ...
+
+[main] Indexing 10 table description(s) ...
+[table_indexer] Indexed 10 table descriptions -> 'table_faiss_index'
+
+[main] Query: What is the Transformer architecture?
+[main] Router selected modalities: ['TEXT']
+[main] Retrieved 3 result(s) after merge/de-dup.
+```
+
+Example answer:
+
+```text
+The Transformer is a neural network architecture based solely on attention mechanisms,
+replacing recurrence and convolutions entirely. It consists of an encoder and a decoder,
+each composed of a stack of identical layers.
+
+This answer is based on the provided text.
 ```
 
 ---
 
 ## Cost Considerations
 
-> ⚠️ **GPT-4V calls cost more.  Use `--skip-images` during development.**
+Using DeepSeek for text and table reasoning is usually cheaper than using GPT-4-level models for every step.
 
-Approximate costs per document (GPT-4V "high" detail, ~1024×1024 images):
-- Each image ≈ 765 input tokens ≈ **$0.008–$0.01** at current pricing
-- A 50-page document with 20 images ≈ **$0.15–$0.20** in image captioning alone
-- Captions are generated once and cached; re-running queries does not re-caption
+The expensive part in a full multimodal system is usually image captioning with a vision model.
 
-**Cost optimisation tips:**
-1. `--skip-images` — bypass GPT-4V entirely during development
-2. Pre-generate captions once, save to JSON, reload on subsequent runs
-3. Use LLaVA locally (free) for development, GPT-4V for production
-4. Use `gpt-3.5-turbo` for table descriptions (cheaper, still good at structured data)
+Cost-saving tips:
+
+1. Use `--skip-images` while developing
+2. Use DeepSeek for text/table reasoning
+3. Cache table descriptions and indexes
+4. Add local LLaVA later for free image captioning
+5. Reuse FAISS indexes instead of rebuilding them every run
 
 ---
 
 ## What This Can vs Cannot Answer
 
-### CAN answer (multimodal RAG)
-- "What does the flowchart in section 3 show?" → image caption search
-- "What was Q3 revenue according to the table?" → table description search
-- "Describe the network architecture diagram" → image caption search
-- "What were the year-over-year growth percentages?" → table search
-- "Explain the data pipeline shown in figure 2" → image + text combined
+### CAN answer in the current DeepSeek setup
 
-### CANNOT answer (text-only RAG)
-- "What does the flowchart in section 3 show?" — no image content indexed
-- "What was Q3 revenue?" — only if the number also appeared in prose
+* "What is the Transformer architecture?"
+* "What is self-attention?"
+* "What does the paper say about multi-head attention?"
+* "What BLEU scores are reported in the paper?"
+* "What are the main experimental results?"
+* "Summarise the main idea of the paper."
+
+### CANNOT fully answer in the current DeepSeek setup
+
+* "What does the diagram visually show?"
+* "Describe the architecture figure."
+* "What is shown in the image on page 3?"
+
+These require image captioning, which is skipped in this version.
 
 ---
 
-## Comparison with Project 1 (Basic RAG)
+## Comparison with Project 1: Basic RAG
 
-| Feature | Project 1 (Basic RAG) | Project 4 (Multimodal RAG) |
-|---|---|---|
-| Content types | Text only | Text + Images + Tables |
-| Indexes | 1 FAISS index | 3 FAISS indexes |
-| Embedding model | all-MiniLM-L6-v2 | all-MiniLM-L6-v2 (same) |
-| LLM calls | Generation only | Captioning + Table desc + Classification + Generation |
-| Query routing | None (always searches) | Router classifies query → selects relevant index(es) |
-| Image understanding | ❌ | ✅ GPT-4V captions |
-| Table understanding | ❌ | ✅ LLM-generated descriptions |
-| Cost | Low (local embeddings) | Medium–High (GPT-4V for images) |
-| Complexity | Low | High |
+| Feature             | Project 1: Basic RAG  | Project 4: Multimodal RAG                |
+| ------------------- | --------------------- | ---------------------------------------- |
+| Content types       | Text only             | Text + Tables + Extracted Images         |
+| Indexes             | 1 FAISS index         | Separate indexes for text and tables     |
+| Embedding model     | all-MiniLM-L6-v2      | all-MiniLM-L6-v2                         |
+| LLM calls           | Final generation only | Table description + routing + generation |
+| Query routing       | Not required          | Router selects relevant modality         |
+| Image extraction    | ❌                     | ✅                                        |
+| Image understanding | ❌                     | ⚠️ skipped in DeepSeek mode              |
+| Table understanding | ❌                     | ✅                                        |
+| Cost                | Low                   | Low to medium with DeepSeek              |
+| Complexity          | Low                   | Higher                                   |
 
-**New concepts introduced in this project:**
-- Multimodal document parsing (pdfplumber)
-- Vision model integration (GPT-4V via base64 image encoding)
-- Multiple specialised FAISS indexes (one per modality)
-- Query routing / intent classification
-- Cross-modality result merging and ranking
-- Modality-aware generation prompts
+---
+
+## New Concepts Introduced
+
+* Multimodal document parsing
+* Text, image, and table extraction from PDFs
+* Separate FAISS indexes per modality
+* LLM-generated table descriptions
+* Query routing by modality
+* Cross-modality retrieval
+* DeepSeek integration through OpenAI-compatible API
+* Development mode using `--skip-images`
 
 ---
 
 ## Project Structure
 
-```
+```text
 04-multimodal-rag/
 ├── README.md
 ├── requirements.txt
 ├── .env.example
+├── main.py
+│
 ├── data/
-│   ├── sample_docs/         ← Put your PDF files here
+│   ├── sample_docs/
+│   │   └── attention_is_all_you_need.pdf
+│   │
 │   └── extracted/
-│       ├── images/          ← PNG files extracted from PDFs
-│       └── tables/          ← CSV files extracted from PDFs
+│       ├── images/
+│       └── tables/
+│
 ├── src/
-│   ├── multimodal_parser.py ← PDF → text + images + tables
-│   ├── text_indexer.py      ← FAISS index for text chunks
-│   ├── image_processor.py   ← GPT-4V image captioning
-│   ├── image_indexer.py     ← FAISS index for image captions
-│   ├── table_processor.py   ← LLM table → prose description
-│   ├── table_indexer.py     ← FAISS index for table descriptions
-│   ├── query_router.py      ← Classify query → modality(ies)
-│   ├── multi_retriever.py   ← Fetch + merge results from indexes
-│   └── generator.py         ← Build prompt + call LLM
-└── main.py                  ← CLI entry point
+│   ├── multimodal_parser.py
+│   ├── text_indexer.py
+│   ├── image_processor.py
+│   ├── image_indexer.py
+│   ├── table_processor.py
+│   ├── table_indexer.py
+│   ├── query_router.py
+│   ├── multi_retriever.py
+│   └── generator.py
+│
+├── text_faiss_index/
+└── table_faiss_index/
 ```
+
+---
+
+## Common Issues and Fixes
+
+### 1. `Client.__init__() got an unexpected keyword argument 'proxies'`
+
+This happens because of incompatible versions of `openai`, `httpx`, and `langchain-openai`.
+
+Fix:
+
+```bash
+python -m pip uninstall -y openai httpx langchain-openai langchain langchain-community
+python -m pip install "openai==1.55.3" "httpx==0.27.2" "langchain==0.1.20" "langchain-community==0.0.38" "langchain-openai==0.1.7"
+```
+
+Check:
+
+```bash
+python -c "import openai, httpx; print(openai.__version__, httpx.__version__)"
+```
+
+Expected:
+
+```text
+1.55.3 0.27.2
+```
+
+---
+
+### 2. `unstructured-client requires httpx>=0.28.1`
+
+You may see this warning:
+
+```text
+unstructured-client requires httpx>=0.28.1, but you have httpx 0.27.2
+```
+
+For this setup, keep:
+
+```text
+httpx==0.27.2
+```
+
+Do not upgrade to `0.28.1`, because the `proxies` error may return.
+
+If needed, downgrade `unstructured-client`:
+
+```bash
+python -m pip uninstall -y unstructured-client unstructured
+python -m pip install "unstructured[pdf]==0.13.7" "unstructured-client<0.25"
+python -m pip install --force-reinstall "httpx==0.27.2"
+```
+
+---
+
+### 3. DeepSeek API key not found
+
+If you see:
+
+```text
+DEEPSEEK_API_KEY is not set
+```
+
+Check that `.env` exists:
+
+```bash
+ls -a
+```
+
+Then open `.env` and confirm:
+
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+---
+
+### 4. PDF file not found
+
+If you see:
+
+```text
+No such file or directory: data/sample_docs/attention_is_all_you_need.pdf
+```
+
+Download the PDF again:
+
+```bash
+mkdir -p data/sample_docs
+curl -L "https://arxiv.org/pdf/1706.03762" -o data/sample_docs/attention_is_all_you_need.pdf
+```
+
+---
+
+## Future Improvements
+
+* Add LLaVA/Ollama for local image captioning
+* Remove the need for `--skip-images`
+* Add page-level citations in final answers
+* Cache generated table descriptions
+* Cache image captions
+* Add support for multiple PDFs
+* Add Streamlit frontend
+* Add evaluation questions for each modality
+* Add persistent FAISS loading instead of rebuilding every run
+
+---
+
+## Final Demo Command
+
+Use this for the demo:
+
+```bash
+python main.py \
+  --file data/sample_docs/attention_is_all_you_need.pdf \
+  --query "Summarise the main idea of the paper and mention any table-based results." \
+  --skip-images
+```
+
+This demonstrates:
+
+```text
+PDF parsing
+Text extraction
+Table extraction
+Image extraction
+FAISS indexing
+Query routing
+DeepSeek generation
+Grounded RAG answer
+```
+
+---
+
+## Summary
+
+This project shows how a PDF can be converted into a multimodal-style RAG system. It extracts text, tables, and images, builds searchable indexes, routes each query to the right source of information, and generates grounded answers using DeepSeek.
+
+In the current DeepSeek setup, the project supports strong text and table-based document reasoning. Image captioning is intentionally skipped with `--skip-images`, but the architecture is ready to support full visual reasoning later using a local model like LLaVA.
