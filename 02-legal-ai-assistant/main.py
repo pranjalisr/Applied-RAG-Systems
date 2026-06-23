@@ -28,17 +28,15 @@ from rich.rule import Rule
 from rich.table import Table
 from rich import box
 
-# ---------------------------------------------------------------------------
+
 # Load environment variables from .env file
-# ---------------------------------------------------------------------------
 load_dotenv()
 
 console = Console()
 
 
-# ---------------------------------------------------------------------------
+
 # Argument parsing
-# ---------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -87,9 +85,8 @@ Examples:
     return parser
 
 
-# ---------------------------------------------------------------------------
+
 # Rich display helpers
-# ---------------------------------------------------------------------------
 
 def print_disclaimer() -> None:
     """Print the mandatory legal disclaimer prominently."""
@@ -232,6 +229,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+
     # Validate API key
     api_key = os.getenv("DEEPSEEK_API_KEY")
     base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -240,8 +238,9 @@ def main() -> None:
         console.print(
             "[bold red]ERROR:[/bold red] DEEPSEEK_API_KEY not set. "
             "Add your DeepSeek API key to .env."
-    )
-    sys.exit(1)
+        )
+        sys.exit(1)
+
 
     # Validate file argument
     if not args.file:
@@ -256,19 +255,20 @@ def main() -> None:
         console.print(f"[bold red]ERROR:[/bold red] File not found: {args.file}")
         sys.exit(1)
 
-    # ── Startup banner ──────────────────────────────────────────────────────
     console.print(
         Panel(
             "[bold white]Legal AI Assistant[/bold white]\n"
             f"[dim]Contract:[/dim] {os.path.basename(args.file)}\n"
-            f"[dim]Model   :[/dim] {args.model}",
+            f"[dim]Model :[/dim] {args.model}",
             border_style="white",
             padding=(1, 4),
         )
     )
+
     print_disclaimer()
 
-    # ── Import modules here to keep startup fast for --help ─────────────────
+    print("📦 importing modules...")
+
     from langchain_openai import ChatOpenAI
     from src.document_parser import parse_legal_document
     from src.indexer import index_document, get_retriever
@@ -278,74 +278,81 @@ def main() -> None:
     from src.conflict_detector import detect_conflicts
     from src.qa_chain import build_qa_chain, ask_question
 
-    # Initialise LLM
+    print("🤖 creating DeepSeek LLM client...")
+
     llm = ChatOpenAI(
-    model=args.model,
-    temperature=0,
-    openai_api_key=api_key,
-    openai_api_base=base_url,
+        model=args.model,
+        temperature=0,
+        openai_api_key=api_key,
+        openai_api_base=base_url,
     )
 
-    # ── Step 1: Parse document ───────────────────────────────────────────────
     print_section("Step 1 — Parsing Document")
+
     with console.status("[bold green]Parsing document...[/bold green]"):
         doc = parse_legal_document(args.file)
 
     console.print(
-        f"  ✅ Parsed [bold]{doc['file_name']}[/bold] — "
+        f"✅ Parsed [bold]{doc['file_name']}[/bold] — "
         f"{doc['page_count']} page(s), {len(doc['sections'])} section(s) detected"
     )
 
-    # ── Step 2: Index for RAG ────────────────────────────────────────────────
     print_section("Step 2 — Building Vector Index")
+
     index_path = f"legal_index_{os.path.splitext(doc['file_name'])[0]}"
+
     with console.status("[bold green]Indexing document...[/bold green]"):
         vector_store = index_document(args.file, index_path=index_path)
-    retriever = get_retriever(vector_store, k=4)
-    console.print(f"  ✅ Index built at [bold]{index_path}/[/bold]")
+        retriever = get_retriever(vector_store, k=4)
 
-    # ── Step 3: Executive Summary ────────────────────────────────────────────
+    console.print(f"✅ Index built at [bold]{index_path}/[/bold]")
+
     print_section("Step 3 — Executive Summary")
+
     with console.status("[bold green]Generating summary...[/bold green]"):
         summary = generate_summary(doc["full_text"], llm)
+
     print_summary(summary)
 
-    # ── Step 4: Clause Extraction ────────────────────────────────────────────
     print_section("Step 4 — Key Clause Extraction")
+
     with console.status("[bold green]Extracting clauses...[/bold green]"):
         clauses = extract_clauses(doc["full_text"], llm)
-    console.print(f"  ✅ {len(clauses)} clause(s) extracted")
+
+    console.print(f"✅ {len(clauses)} clause(s) extracted")
     print_clauses(clauses)
 
-    # ── Step 5: Risk Analysis ────────────────────────────────────────────────
     if not args.skip_risks:
         print_section("Step 5 — Risk Analysis")
+
         with console.status("[bold green]Analyzing risks...[/bold green]"):
             risks = analyze_risks(clauses, llm)
-        console.print(f"  ✅ {len(risks)} risk(s) identified")
+
+        console.print(f"✅ {len(risks)} risk(s) identified")
         print_risks(risks)
     else:
         console.print("[dim]Risk analysis skipped (--skip-risks).[/dim]")
-        risks = []
 
-    # ── Step 6: Conflict Detection ───────────────────────────────────────────
     if not args.skip_conflicts:
         print_section("Step 6 — Conflict Detection")
+
         with console.status("[bold green]Detecting conflicts...[/bold green]"):
             conflicts = detect_conflicts(clauses, llm)
-        console.print(f"  ✅ {len(conflicts)} potential conflict(s) found")
+
+        console.print(f"✅ {len(conflicts)} potential conflict(s) found")
         print_conflicts(conflicts)
     else:
         console.print("[dim]Conflict detection skipped (--skip-conflicts).[/dim]")
 
-    # ── Step 7: Q&A ──────────────────────────────────────────────────────────
+    print("💬 building Q&A chain...")
     qa_chain = build_qa_chain(retriever, llm)
 
     if args.question:
-        # Single question mode — answer and exit
         print_section("Q&A — Single Question")
+
         with console.status("[bold green]Thinking...[/bold green]"):
             answer = ask_question(args.question, qa_chain)
+
         console.print(f"\n[bold cyan]Q:[/bold cyan] {args.question}")
         console.print(
             Panel(
@@ -363,12 +370,12 @@ def main() -> None:
     else:
         console.print(
             "\n[dim]Tip: run with [bold]--interactive[/bold] to ask follow-up questions, "
-            "or [bold]--question \"...[/bold]\" for a single query.[/dim]"
+            "or [bold]--question \"...\"[/bold] for a single query.[/dim]"
         )
 
     console.print(
         Panel(
-            "✅  Analysis complete.\n\n"
+            "✅ Analysis complete.\n\n"
             "[bold yellow]Reminder:[/bold yellow] Always verify findings with a qualified attorney.",
             border_style="green",
             padding=(1, 2),

@@ -1,9 +1,31 @@
+import json
+import re
+
+def clean_json_response(text: str) -> str:
+    text = text.strip()
+
+    # Remove markdown code fences like ```json ... ```
+    text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"```$", "", text).strip()
+
+    # Extract JSON array only
+    start = text.find("[")
+    end = text.rfind("]")
+
+    if start != -1 and end != -1:
+        text = text[start:end + 1]
+
+    return text
+
 """
 clause_extractor.py — Legal Clause Extraction
 
 Identifies and extracts specific, named clause types from a contract and
 translates them into plain English. This is the "translation layer" between
-dense legal prose and actionable information.
+dense legal prose and actionable information. Return ONLY a valid JSON array. 
+Do not wrap it in markdown. 
+Do not include ```json. 
+Do not add explanation before or after the JSON.
 
 Clause type reference:
     indemnification     — Party A must pay for losses caused to Party B.
@@ -94,12 +116,19 @@ def extract_clauses(contract_text: str, llm) -> list[dict]:
     response = llm.invoke([HumanMessage(content=prompt)])
     raw_content = response.content if hasattr(response, "content") else str(response)
 
-    # Strip markdown code fences if present
+    # Clean LLM response and extract JSON array
     clean = raw_content.strip()
-    if clean.startswith("```"):
-        clean = re.sub(r"^```(?:json)?\s*", "", clean, flags=re.MULTILINE)
-        clean = re.sub(r"```\s*$", "", clean, flags=re.MULTILINE)
-        clean = clean.strip()
+
+    # Remove markdown fences if present
+    clean = re.sub(r"```(?:json)?", "", clean, flags=re.IGNORECASE)
+    clean = clean.replace("```", "").strip()
+
+    # Extract only JSON array from the response
+    start = clean.find("[")
+    end = clean.rfind("]")
+
+    if start != -1 and end != -1:
+        clean = clean[start:end + 1]
 
     try:
         clauses = json.loads(clean)
