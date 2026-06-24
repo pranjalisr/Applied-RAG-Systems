@@ -107,7 +107,51 @@ def create_agent(
     else:
         # ZERO_SHOT_REACT_DESCRIPTION works with any LLM via plain-text reasoning.
         agent_type = AgentType.ZERO_SHOT_REACT_DESCRIPTION
-        agent_kwargs = {}
+
+        agent_kwargs = {
+            "prefix": """You are an Agentic RAG assistant.
+
+        You have access to these tools:
+
+        {tools}
+
+        CRITICAL RULES:
+        1. You are NOT allowed to answer directly when a tool can answer.
+        2. You MUST use Action and Action Input exactly.
+        3. Do NOT describe the tool you would use.
+        4. Do NOT say "using search_knowledge_base".
+        5. Do NOT write markdown steps.
+        6. Do NOT write JSON.
+        7. Do NOT write ```tool_code.
+        8. After every Action, wait for Observation.
+
+        For annual report, PDF, or knowledge base questions, use search_knowledge_base.
+        For stock price questions, use get_stock_data.
+        If the user asks both, use both tools before final answer.""",
+
+        "format_instructions": """Use ONLY this format:
+
+        Question: the input question
+        Thought: I need to use a tool.
+        Action: one of [{tool_names}]
+        Action Input: the exact input for the tool
+        Observation: the result of the tool
+        Thought: I need to use another tool or answer.
+        Action: one of [{tool_names}]
+        Action Input: the exact input for the tool
+        Observation: the result of the tool
+        Thought: I now have enough information.
+        Final Answer: final answer here
+
+        Never skip Action.
+        Never skip Observation.
+        Never answer before using tools.""",
+
+            "suffix": """Begin.
+
+        Question: {input}
+        Thought:""",
+        }
 
     agent_executor = initialize_agent(
         tools=tools,
@@ -129,20 +173,17 @@ def create_agent(
 def run_agent_query(query: str, agent: AgentExecutor) -> str:
     """
     Submit a query to the agent and return the final answer string.
-
-    Wraps the AgentExecutor.invoke() call with error handling so the main
-    loop doesn't crash on unexpected LLM failures.
-
-    Args:
-        query: The user's natural-language question.
-        agent: A configured AgentExecutor from create_agent().
-
-    Returns:
-        The agent's final answer as a plain string.
     """
+
     try:
         result = agent.invoke({"input": query})
-        # AgentExecutor returns a dict; the final answer is under "output".
-        return result.get("output", str(result))
-    except Exception as exc:
-        return f"Agent encountered an error: {exc}"
+
+        if isinstance(result, dict):
+            output = result.get("output", "")
+        else:
+            output = str(result)
+
+        return output
+
+    except Exception as e:
+        return f"[Agent Error] {type(e).__name__}: {e}"
