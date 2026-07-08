@@ -321,7 +321,6 @@ Then add the required API keys.
 Example:
 
 ```env
-OPENAI_API_KEY=your_openai_api_key
 GOOGLE_API_KEY=your_gemini_api_key
 DEEPSEEK_API_KEY=your_deepseek_api_key
 SERPAPI_API_KEY=your_serpapi_key
